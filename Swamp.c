@@ -7,7 +7,7 @@
 unsigned char state='D';
 
 //each of the following functions is a state of the machine, returns a character of the next state.
-unsigned char Disabled(); //unsure if we need to pass in anything
+unsigned char Disabled(); //unsure if we need to pass in anything in
 unsigned char Idle();
 unsigned char Runnung();
 unsigned char Error();
