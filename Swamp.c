@@ -55,8 +55,11 @@ unsigned int button_press(){
   return 0; //returns 0 if the button has not been properly pressed
   }
       
+//This is the common functionallity of most of the states in this system
 void all_state(){
-  
+  //update current water level, send to LCD screen
+  //update current temperature, send to LCD screen
+  //vent position manipulation
 }
       
 unsigned char Disabled(){
@@ -90,6 +93,7 @@ void Idle(){
 void Running(){
                     //activate blue LED
                     //activate motor
+                    //timestamp for motor turning on
   unsigned int change=0; //checks if the state needs to change
   while(!change){
     all_state();
@@ -108,6 +112,7 @@ void Running(){
     }
                     //deactivate blue LED
                     //deactivate motor
+                    //timestamp for motor turning off
   }
       
 void Error(){
