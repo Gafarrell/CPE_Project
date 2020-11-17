@@ -3,6 +3,13 @@
 // takes in data from temperature and water level sensor.
 // worked on by Alan Garcia and Gavin Farrell
 
+//addresses
+volatile unsigned char *myDDRA = (unsigned char *) 0x22;
+volatile unsigned char *port_a = (unsigned char *) 0x23;
+volatile unsigned char *pin_a = (unsigned char *) 0x21;
+volatile unsigned char *myDDRB = (unsigned char *) 0x25;
+volatile unsigned char *port_b = (unsigned char *) 0x26;
+
 //character variable that decides which state the program is in, defaults to Disabled
 unsigned char state;
 //threshold for the temperature
@@ -24,6 +31,10 @@ setup(){
   state = 'D'; // at Disabled state by default.
   //we must decide our threshold and minimum water values
   //we must decide the addresses for our outputs and inputs
+  *myDDRA |= 0xF0; //set pins 26-29 to outputs for the LEDs
+  *myDDRA &= 0xFE; //set pin 22 to input for the push button
+  *port_a |= 0x01; //enable pullup resistor on pin 22
+  *myDDRB |= 0x80; //set pin 53 to output for the motor
   }
   
 loop(){
@@ -47,9 +58,9 @@ loop(){
   }
 
 unsigned int button_press(){
-  if(//we must decide which pin will take an input from){
+  if(!(*pin_a & 0x01)){
     for(volatile unsigned int i=0; i<1000; i++);//check if the input is only a small error
-    if(//same issue as above){
+    if(!(*pin_a & 0x01)){
       return 1;  //returns 1 if the button has been properly pressed
       }
   return 0; //returns 0 if the button has not been properly pressed
@@ -63,14 +74,14 @@ void all_state(){
 }
       
 unsigned char Disabled(){
-                       //activate yellow LED (need to decide which pin we're using
+  *port_a |= 0x80;    //activate yellow LED (pin 29)
   while(button_press()){  }
-                       //deactivate yellow LED
+  *port_a &= 0x7F;    //deactivate yellow LED
   state='I';          //returns I so that it can move to the Idle state
 }
       
 void Idle(){
-                      //activate green LED
+  *port_a |= 0x40;       //activate green LED (pin 28)
   unsigned int change=0; //checks if the state needs to change
   while(!change){
     all_state();
@@ -87,12 +98,12 @@ void Idle(){
       state='D';
       }
     }
-                     //deactivate green LED
+  *port_a &= 0xBF; //deactivate green LED
   }
       
 void Running(){
-                    //activate blue LED
-                    //activate motor
+  *port_a |= 0x20;  //activate blue LED (pin 27)
+  *port_b |= 0x80;  //activate motor
                     //timestamp for motor turning on
   unsigned int change=0; //checks if the state needs to change
   while(!change){
@@ -110,13 +121,13 @@ void Running(){
       state='D';
       }
     }
-                    //deactivate blue LED
-                    //deactivate motor
+  *port_a &= 0xDF;  //deactivate blue LED
+  *port_b &= 0x7F;  //deactivate motor
                     //timestamp for motor turning off
   }
       
 void Error(){
-                    //activate red LED
+  *port_a |= 0x10;  //activate red LED (pin 26)
                     //display error message on LCD screen
   while(//water bellow minimum){
     all_state();
@@ -125,5 +136,5 @@ void Error(){
       }
     }
   state= 'I'        //return to idle once water is above minimum
-                    //deactivate red LEd
+  *port_a &= 0xEF;  //deactivate red LEd
   }
