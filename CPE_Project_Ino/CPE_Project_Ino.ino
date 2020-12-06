@@ -6,7 +6,6 @@
 // include the needed elegoo library code:
 #include <LiquidCrystal.h>
 #include <dht_nonblocking.h>
-#include <Wire.h>
 #include <DS3231.h>
 
 #define DHT_SENSOR_TYPE DHT_TYPE_11
@@ -24,14 +23,14 @@
 #define BLUE 3
 
 // Port A Addresses
-volatile unsigned char *port_a = (unsigned char *) 0x23;
-volatile unsigned char *myDDRA = (unsigned char *) 0x22;
-volatile unsigned char *pin_a = (unsigned char *) 0x21;
+volatile unsigned char *port_a = (unsigned char *) 0x22;
+volatile unsigned char *myDDRA = (unsigned char *) 0x21;
+volatile unsigned char *pin_a = (unsigned char *) 0x20;
 
-// Port B Addresses
-volatile unsigned char *myDDRB = (unsigned char *) 0x25;
-volatile unsigned char *port_b = (unsigned char *) 0x26;
-volatile unsigned char *pin_b = (unsigned char *) 0x24;
+// Port B addresses
+volatile unsigned char *myDDRB = (unsigned char *) 0x24;
+volatile unsigned char *port_b = (unsigned char *) 0x25;
+volatile unsigned char *pin_b = (unsigned char *) 0x23;
 
 // Analog Addresses
 volatile unsigned char *myADCSRA = (unsigned char*) 0x7A;
@@ -49,14 +48,15 @@ volatile unsigned char *myUDR0   = (unsigned char *)0x00C6;
 // Common variables
 static const unsigned int DHT_SENSOR_PIN = 2;
 
-unsigned char current_state = 'I';
+unsigned char current_state = 'D';
 
-static float humidity;
-static int water_current = 150;
+static float humidity = 0;
+static int water_current = 0;
 static int water_threshold = 100;
-static float temp_current = 25;
-static float temp_threshold = 24;
+static float temp_current = 0;
+static float temp_threshold = 15;
 
+static unsigned int LEDs = 0x0F;
 
 // initialize the library with the numbers of the interface pins
 LiquidCrystal lcd(7, 8, 9, 10, 11, 12);
@@ -74,97 +74,108 @@ void setup(){
   clock.setDateTime(__DATE__,__TIME__);
 
   *myDDRA |= 0x0F;
+  *myDDRB |= 0x0E;
   *port_a |= 0x10;
-  *port_b |= 0b00001110;
-  
+  *pin_b |= 0b00000100;
 }
 
 void loop(){
   switch (current_state){
     case 'R':
+      LEDs = 0b00001000;
+      if ((*pin_a&LEDs) != LEDs){
+        LEDs &= (0x01 << BLUE);
+        LEDs |= (0x01 << BLUE);
+      }
       run_cooler();
       break;
     case 'I':
+      LEDs = 0b00000001;
+      if ((*pin_a&LEDs) != LEDs){
+        LEDs &= (0x01 << GREEN);
+        LEDs |= (0x01 << GREEN);
+      }
       idle_cooler();
       break;
     case 'E':
+      LEDs = 0b00000100;
+      if ((*pin_a&LEDs) != LEDs){
+        LEDs &= (0x01 << RED);
+        LEDs |= (0x01 << RED);
+      }
       error_cooler();
       break;
     default:
+      LEDs = 0b00000010;
+      if ((*pin_a&LEDs) != LEDs){
+        LEDs &= (0x01 << YELLOW);
+        LEDs |= (0x01 << YELLOW);
+      }
       disable_cooler();
       break;
   }
+  
 }
 
 void run_cooler(){
-  *pin_b |= 0b00001100; // Turn motors on
-  *pin_a &= (0x01 << BLUE); // Turn off all LEDs except blue
-  *pin_a |= (0x01 << BLUE); // Turn on blue LED
-  print_date(true); // Print date data
-  
-  while (current_state == 'R'){
-    data_update();
-   
-    if (temp_current < temp_threshold)
-      current_state = 'I';
-
-    if (water_current < water_threshold)
-      current_state = 'E';
+  if ((*pin_b&0b00001000) == 0){
+    *pin_b |= 0b00001000; //Turn motors on
+    print_date(true);
   }
+  data_update();
   
-  *pin_b &= 0b11110001; //Turn motors off
-  print_date(false); // Print time data to host
-  *pin_a &= ~(0x01 << BLUE); //Turn off blue LED
+  if (temp_current < temp_threshold)
+    current_state = 'I';
+
+  if (water_current < water_threshold)
+    current_state = 'E';
+  
+  if ((*pin_b&0b00001000) && current_state != 'R'){
+    *port_b &= 0b11110111; //Turn motors on
+    print_date(false);
+  }
 }
 
 void idle_cooler(){
-  *pin_a |= (0x01 << GREEN); // Turn on green LED
-  while (current_state == 'I'){
-    data_update(); // Update and print temp data
-    
-    //if (temp_current > temp_threshold) // If temp is too high, run the cooler
-    //  current_state = 'R';
+  
+  data_update(); // Update and print temp data
+  
+  if (temp_current > temp_threshold) // If temp is too high, run the cooler
+    current_state = 'R';
 
-    //if (water_current < water_threshold) // If water is too low, enter error state
-    //  current_state = 'E';
-  }
-  *pin_a &= 0xFE; // Turn off green LED
+  if (water_current < water_threshold) // If water is too low, enter error state
+    current_state = 'E';
 }
 
 void error_cooler(){
-  *pin_a |= (0x01 << RED); // Turn red LED on
-  data_update(); // Print error to LCD screen
-  while (current_state == 'E'){
-    data_update();
-    if (water_current > water_threshold) // Wait until water is back to normal
-      current_state = 'I';
-  }
-  *pin_a &= ~(0x01 << RED); // Turn red LED off
+  data_update();
+  if (water_current > water_threshold) // Wait until water is back to normal
+    current_state = 'I';
 }
 
 void disable_cooler(){
-  *pin_a |= (0x01 << YELLOW); // Turn yellow LED on
-  while (current_state == 'D'){
-    data_update();
-  }
-  
-  *pin_a &= ~(0x01 << YELLOW); // Turn yellow LED off
+  data_update();
 }
 
 void data_update(){
   measure_environment(&temp_current, &humidity);
-  //if (*pin_a & 0x10){
-  //  current_state = (current_state == 'D' ? 'I' : 'D');  // Change the state
-  //  while (*pin_a&0x01);   // Wait until the user releases the button to continue going
-  //}
+  if ((*pin_a&LEDs) != LEDs){
+    *pin_a |= LEDs;
+    *pin_a &= LEDs;
+  }
+  if ((*pin_a & 0x10) != 0){ 
+    current_state = (current_state == 'D' ? 'I' : 'D');  // Change the state
+    while (*pin_a&0x10);   // Wait until the user releases the button to continue going
+  }
 }
 
 void print_date(bool on){
-  if (on){
-   U0print("Motor turned on - ");
-  } else {
-    U0print("Motor turned off - ");
-  }
+  dt = clock.getDateTime();
+  if (on)
+    U0print("On - ");
+  else 
+    U0print("Off - ");
+  
   U0printInt(dt.year);
   U0putchar('-');
   U0printInt(dt.month);
@@ -214,19 +225,20 @@ void adc_init()
   *myADMUX |= 0b01000000; 
 }
 
-void U0print(char *string){
+// Prints a string constant
+void U0print(const char *string){
   while (*string != '\0'){
     U0putchar(*string);
     string++;
   }
 }
 
+// Prints an integer using recursive formula
 void U0printInt(int number){
-  if (number < 10){
-    U0putchar('0' + number%10);
-    return;
-  }
-  U0printInt(number/10);
+  if (number > 10)
+    U0printInt(number/10); 
+  
+  U0putchar('0' + number%10);
 }
 
 // Initialize USART0 to "int" Baud
@@ -264,17 +276,23 @@ void U0putchar(unsigned char U0pdata)
   *myUDR0 = U0pdata; //Set the UDR register with new data.
 }
 
-static void print_info_to_LCD(bool error){
+void print_info_to_LCD(bool error){
+  lcd.clear();
   lcd.setCursor(0,0);
-  lcd.print("T = ");
-  lcd.print(temp_current);
-  lcd.print(" deg. C");
-  lcd.setCursor(0,1);
-  lcd.print("Humidity = ");
-  lcd.print(humidity);
-  lcd.print("%");
-  //if (error)
-  //  lcd.print("Error: Water Low");
+  if (error)
+    lcd.print("Error: Water Low");
+  else if (current_state != 'D'){
+    lcd.print("T = ");
+    lcd.print(temp_current);
+    lcd.print(" deg. C");
+    lcd.setCursor(0,1);
+    lcd.print("H = ");
+    lcd.print(humidity);
+    lcd.print("%");
+  } else 
+    lcd.print("Disabled");
+    
+  
 }
 
 /*
@@ -286,17 +304,15 @@ static bool measure_environment( float *temperature, float *humidity )
   static unsigned long measurement_timestamp = millis( );
   
   /* Measure once every four seconds. */
-  if( millis( ) - measurement_timestamp > 3000ul && current_state != 'D')
+  if( millis( ) - measurement_timestamp > 3000ul)
   {
     if( dht_sensor.measure( temperature, humidity ) == true )
     {
       measurement_timestamp = millis( );
-      //water_current = adc_read(0);
-      print_info_to_LCD(false);
+      print_info_to_LCD(current_state == 'E');
+      water_current = adc_read(0);
       return( true );
     }
-  } else {
-    lcd.clear();
   }
 
   return( false );
